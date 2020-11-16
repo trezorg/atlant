@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+option go_package = "github.com/trezorg/atlant/pkg/proto";
+option java_multiple_files = true;
+option java_package = "io.grpc.trezorg.atlant";
+option java_outer_classname = "AtlantProto";
+
+import "google/protobuf/timestamp.proto";
+
+package proto;
+
+service AtlantService {
+  rpc Fetch(FetchRequest) returns (stream FetchState) {}
+  rpc List(Page) returns (Products) {}
+}
+
+enum  StateEnum {
+  IN_PROGRESS = 0;
+  SUCCESS = 1;
+  ERROR = 2;
+}
+
+enum SortingField {
+  NAME = 0;
+  PRICE = 1;
+  UPDATED_AT = 2;
+  PRICE_CHANGES = 3;
+}
+
+enum SortingOrder {
+  ASC = 0;
+  DESC = 1;
+}
+
+message FetchState {
+  StateEnum state = 1;
+  int32 loaded_records = 2;
+}
+
+message FetchRequest {
+  string url = 1;
+  bool skip_header = 2;
+  int32 separator = 3;
+}
+
+message Cursor {
+  string name = 1;
+  string field = 2;
+}
+
+message Page {
+  uint32 limit = 1;
+  Sorting sorting = 2;
+  Cursor cursor = 3;
+}
+
+message Sorting {
+  SortingField field = 1;
+  SortingOrder order = 2;
+}
+
+message Product {
+  string name = 1;
+  int32 price = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  int32 price_changes = 4;
+}
+
+message Products {
+  repeated Product products = 1;
+  Cursor Cursor = 2;
+}
