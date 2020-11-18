@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/golang/protobuf/ptypes"
+
 	"github.com/sirupsen/logrus"
 	pb "github.com/trezorg/atlant/pkg/proto"
 	"github.com/urfave/cli/v2"
@@ -14,6 +16,28 @@ import (
 
 func list(c *cli.Context) error {
 	serverURI := c.String("server-uri")
+	sorting := c.String("sorting")
+	sortingOrder := c.String("order")
+	var pbSorting pb.SortingField
+	switch sorting {
+	case "name":
+		pbSorting = pb.SortingField_NAME
+	case "price":
+		pbSorting = pb.SortingField_PRICE
+	case "date":
+		pbSorting = pb.SortingField_UPDATED_AT
+	default:
+		return fmt.Errorf("unknown sorting field: Allowed: name, price, date")
+	}
+	var pbOrder pb.SortingOrder
+	switch sortingOrder {
+	case "asc":
+		pbOrder = pb.SortingOrder_ASC
+	case "desc":
+		pbOrder = pb.SortingOrder_DESC
+	default:
+		return fmt.Errorf("unknown sorting order: Allowed: asc, desc")
+	}
 	ctx, done := context.WithCancel(context.Background())
 	defer done()
 
@@ -23,13 +47,23 @@ func list(c *cli.Context) error {
 	}
 	client := pb.NewAtlantServiceClient(conn)
 
-	result, err := client.List(ctx, &pb.Page{Limit: 10})
+	result, err := client.List(ctx, &pb.Page{Limit: 10, Sorting: &pb.Sorting{
+		Field: pbSorting,
+		Order: pbOrder,
+	}})
 	if err != nil {
 		return err
 	}
 
 	for _, record := range result.Products {
-		fmt.Printf("%s => %d\n", record.Name, record.Price)
+		updatedAt, _ := ptypes.Timestamp(record.UpdatedAt)
+		fmt.Printf(
+			"%s => %d. Price changed: %d. Updated at: %s\n",
+			record.Name,
+			record.Price,
+			record.PriceChanges,
+			updatedAt,
+		)
 	}
 
 	return nil

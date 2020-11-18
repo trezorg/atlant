@@ -16,7 +16,6 @@ func prepareArgs() *cli.App {
 	}}
 	app.Usage = "GRPC service client"
 	app.EnableBashCompletion = true
-	app.Action = list
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:     "server-uri",
@@ -53,6 +52,27 @@ func prepareArgs() *cli.App {
 					EnvVars:  []string{"SKIP_HEADER"},
 					Required: false,
 					Usage:    "skip csv header",
+				},
+			},
+		},
+		{
+			Name:   "show",
+			Usage:  "List records",
+			Action: list,
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:     "sorting",
+					Aliases:  []string{"s"},
+					Required: false,
+					Value:    "name",
+					Usage:    "sorting field",
+				},
+				&cli.StringFlag{
+					Name:     "order",
+					Aliases:  []string{"o"},
+					Required: false,
+					Value:    "asc",
+					Usage:    "sorting order",
 				},
 			},
 		},
