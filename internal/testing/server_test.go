@@ -27,9 +27,13 @@ import (
 )
 
 const (
-	csvData = `test1;100
+	csvData = `test1;50
+test1;50
+test1;50
+test1;50
 test2;400
 test3;100
+test3;150
 test3;200`
 	port = "27017"
 	host = "127.0.0.1"
@@ -144,6 +148,16 @@ func Test_AtlantService(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, records.Products, 3)
 	require.Equal(t, "test3", records.Products[0].Name)
+
+	expected := map[string]int{
+		"test1": 1,
+		"test2": 1,
+		"test3": 3,
+	}
+
+	for _, record := range records.Products {
+		require.Equalf(t, int32(expected[record.Name]), record.PriceChanges, "%#v", record)
+	}
 
 	records, err = db.List(ctx, server.SetPageDefaults(&pb.Page{
 		Limit: 1,

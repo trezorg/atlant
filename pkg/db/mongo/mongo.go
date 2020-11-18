@@ -2,7 +2,10 @@ package mongo
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"github.com/golang/protobuf/ptypes"
 
 	"github.com/trezorg/atlant/pkg/db"
 	"github.com/trezorg/atlant/pkg/loader"
@@ -71,6 +74,18 @@ var (
 		},
 	}
 )
+
+func isMongoDuplicateError(err error) bool {
+	var e mongo.WriteException
+	if errors.As(err, &e) {
+		for _, we := range e.WriteErrors {
+			if we.Code != 11000 {
+				return false
+			}
+		}
+	}
+	return true
+}
 
 type DB struct {
 	*mongo.Client
@@ -143,6 +158,30 @@ func New(ctx context.Context, connectionURL string) (*DB, error) {
 	return _db, _db.ensureIndexes(ctx)
 }
 
+type mongoProduct struct {
+	Name         string    `bson:"name"`
+	Price        int       `bson:"price"`
+	PriceChanges int       `bson:"price_changes"`
+	UpdatedAt    time.Time `bson:"updated_at"`
+}
+
+func decodeProduct(c *mongo.Cursor) (*pb.Product, error) {
+	p := mongoProduct{}
+	if err := c.Decode(&p); err != nil {
+		return nil, err
+	}
+	ts, err := ptypes.TimestampProto(p.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.Product{
+		Name:         p.Name,
+		Price:        int32(p.Price),
+		UpdatedAt:    ts,
+		PriceChanges: int32(p.PriceChanges),
+	}, nil
+}
+
 func (d *DB) List(ctx context.Context, page *pb.Page) (*pb.Products, error) {
 	opts := options.Find()
 	opts.SetLimit(int64(page.Limit))
@@ -153,11 +192,11 @@ func (d *DB) List(ctx context.Context, page *pb.Page) (*pb.Products, error) {
 	}
 	var products []*pb.Product
 	for c.Next(ctx) {
-		var product pb.Product
-		if err := c.Decode(&product); err != nil {
+		product, err := decodeProduct(c)
+		if err != nil {
 			return nil, err
 		}
-		products = append(products, &product)
+		products = append(products, product)
 	}
 	cursor := pb.Cursor{}
 	if len(products) > 0 {
@@ -180,7 +219,12 @@ func (d *DB) Save(ctx context.Context, products []loader.Product) error {
 	operations := make([]mongo.WriteModel, 0, len(products))
 	for _, product := range products {
 		operation := mongo.NewUpdateOneModel()
-		operation.SetFilter(bson.M{nameFieldName: product.Name})
+		operation.SetFilter(bson.M{
+			nameFieldName: product.Name,
+			"price": bson.M{
+				"$ne": product.Price,
+			},
+		})
 		operation.SetUpdate(bson.M{
 			"$set": bson.M{
 				"price":      product.Price,
@@ -191,8 +235,15 @@ func (d *DB) Save(ctx context.Context, products []loader.Product) error {
 		operation.SetUpsert(true)
 		operations = append(operations, operation)
 	}
-	_, err := d.products().BulkWrite(ctx, operations)
-	return err
+	ordered := false
+	_, err := d.products().BulkWrite(ctx, operations, &options.BulkWriteOptions{
+		Ordered: &ordered,
+	})
+	// skip duplicated error
+	if err != nil && !isMongoDuplicateError(err) {
+		return err
+	}
+	return nil
 }
 
 func (d *DB) SaveChannel(
